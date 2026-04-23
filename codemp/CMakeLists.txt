@@ -42,8 +42,35 @@ if(GIT_BRANCH STREQUAL "master")
 endif()
 
 # Set default values if not defined
-if(NOT DEFINED BUILD_NUMBER)
-    set(BUILD_NUMBER "local")
+if(NOT DEFINED JOF_VERSION_STRING)
+    # Local build: find latest release tag and append "dev"
+    execute_process(
+        COMMAND git tag --list --sort=-version:refname
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE _all_tags
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    set(_latest_release "")
+    if(_all_tags)
+        string(REPLACE "\n" ";" _tag_list "${_all_tags}")
+        foreach(_tag IN LISTS _tag_list)
+            if(_tag MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+                set(_latest_release "${_tag}")
+                break()
+            endif()
+        endforeach()
+    endif()
+    if(_latest_release)
+        set(JOF_VERSION_STRING "${_latest_release}")
+        set(JOF_VERSION_SUFFIX " dev")
+    else()
+        set(JOF_VERSION_STRING "dev")
+    endif()
+endif()
+
+if(NOT DEFINED JOF_VERSION_SUFFIX)
+    set(JOF_VERSION_SUFFIX "")
 endif()
 
 if(NOT DEFINED GIT_SHA)
@@ -417,17 +444,17 @@ if(BuildMPEngine)
 		set(MPEngineIncludeDirectories ${MPEngineIncludeDirectories} ${OPENGL_INCLUDE_DIR})
 		set(MPEngineLibraries ${MPEngineLibraries} ${OPENGL_LIBRARIES})
 		
+		# Discord Rich Presence
 		if(BuildDiscordRichPresence)
-			if (APPLE)
+			if (APPLE AND Architecture MATCHES "x86_64")
 				set(MPEngineIncludeDirectories ${MPEngineIncludeDirectories} ${OpenJKLibDir}/discord-rpc/include)
 				set(MPEngineDefines ${MPEngineDefines} "DISCORD")
 				set(MPEngineLibraries ${MPEngineLibraries} ${OpenJKLibDir}/discord-rpc/lib/osx/libdiscord-rpc.a)
-			elseif(Architecture MATCHES "x86_64")
+			elseif(UNIX AND Architecture MATCHES "x86_64")
 				set(MPEngineIncludeDirectories ${MPEngineIncludeDirectories} ${OpenJKLibDir}/discord-rpc/include)
 				set(MPEngineDefines ${MPEngineDefines} "DISCORD")
-                set(MPEngineLibraries ${MPEngineLibraries} ${OpenJKLibDir}/discord-rpc/lib/libdiscord-rpc.so)
-				#set(MPEngineLibraries ${MPEngineLibraries} ${OpenJKLibDir}/discord-rpc/lib/libdiscord-rpc.a)
-			endif(APPLE)
+				set(MPEngineLibraries ${MPEngineLibraries} ${OpenJKLibDir}/discord-rpc/lib/libdiscord-rpc.a)
+			endif()
 		endif(BuildDiscordRichPresence)
 	endif()
 
@@ -446,12 +473,16 @@ if(BuildMPEngine)
 			set(MPEngineIncludeDirectories ${MPEngineIncludeDirectories} ${OPENAL_INCLUDE_DIR})
 			set(MPEngineLibraries ${MPEngineLibraries} ${OPENAL_LIBRARY})
 		endif(UseInternalOpenAL)
-		
-		if(BuildDiscordRichPresence)
-			set(MPEngineIncludeDirectories ${MPEngineIncludeDirectories} ${OpenJKLibDir}/discord-rpc/include)
-			set(MPEngineDefines ${MPEngineDefines} "DISCORD")
-			set(MPEngineLibraries ${MPEngineLibraries} ${OpenJKLibDir}/discord-rpc/lib/discord-rpc.lib)
-		endif(BuildDiscordRichPresence)
+	endif()
+
+	if(MSVC AND BuildDiscordRichPresence)
+		set(MPEngineIncludeDirectories ${MPEngineIncludeDirectories} ${OpenJKLibDir}/discord-rpc/include)
+		set(MPEngineDefines ${MPEngineDefines} "DISCORD")
+		if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+			set(MPEngineLibraries ${MPEngineLibraries} ${OpenJKLibDir}/discord-rpc/lib/x86/discord-rpc.lib)
+		else()
+			set(MPEngineLibraries ${MPEngineLibraries} ${OpenJKLibDir}/discord-rpc/lib/x64/discord-rpc.lib)
+		endif()
 	endif()
 
 	if(UseInternalSDL2)
@@ -688,6 +719,18 @@ if(BuildMPEngine)
 	set_target_properties(${MPEngine} PROPERTIES INCLUDE_DIRECTORIES "${MPEngineIncludeDirectories}")
 	set_target_properties(${MPEngine} PROPERTIES PROJECT_LABEL "MP Client")
 	target_link_libraries(${MPEngine} PRIVATE ${MPEngineLibraries} ${MPCGame} ${MPUI} ${MPVanillaRenderer})
+
+	# Ensure asset pk3s are built with the client and copied next to the exe
+	add_dependencies(${MPEngine} Assets)
+	add_custom_command(TARGET ${MPEngine} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${MPEngine}>/EternalJK"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${CMAKE_CURRENT_BINARY_DIR}/japro-assets.pk3"
+			"$<TARGET_FILE_DIR:${MPEngine}>/EternalJK/japro-assets.pk3"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${CMAKE_CURRENT_BINARY_DIR}/jofclient-assets.pk3"
+			"$<TARGET_FILE_DIR:${MPEngine}>/EternalJK/jofclient-assets.pk3"
+	)
 endif(BuildMPEngine)
 
 #        Dedicated Server (Engine) (jampded.exe)
@@ -826,10 +869,13 @@ endif()
 
 add_zip_command(japro-assets.pk3
 	FILES ${CMAKE_SOURCE_DIR}/assets/japro/*)
+add_zip_command(jofclient-assets.pk3
+	FILES ${CMAKE_SOURCE_DIR}/assets/jofclient/*)
 add_custom_target(Assets
 	ALL
-	DEPENDS japro-assets.pk3)
+	DEPENDS japro-assets.pk3 jofclient-assets.pk3)
 install(FILES
 		${CMAKE_CURRENT_BINARY_DIR}/japro-assets.pk3
+		${CMAKE_CURRENT_BINARY_DIR}/jofclient-assets.pk3
 	DESTINATION "${JKAInstallDir}/EternalJK"
 	COMPONENT ${JKAMPCoreComponent})
