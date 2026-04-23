@@ -315,7 +315,14 @@ jobs:
 
       - name: Set version env vars
         run: |
-          echo "TAG_VERSION=${{ needs.beta-version.outputs.tag_version }}" >> $GITHUB_ENV
+          TAG_VER="${{ needs.beta-version.outputs.tag_version }}"
+          LATEST_BETA="latest-beta"
+          if [ "${{ github.repository_owner }}" != "JediofFreedom" ]; then
+            TAG_VER="${TAG_VER}-${{ github.repository_owner }}"
+            LATEST_BETA="latest-beta-${{ github.repository_owner }}"
+          fi
+          echo "TAG_VERSION=${TAG_VER}" >> $GITHUB_ENV
+          echo "LATEST_BETA=${LATEST_BETA}" >> $GITHUB_ENV
           echo "DISPLAY_VERSION=${{ needs.beta-version.outputs.base_version }}${{ needs.beta-version.outputs.version_suffix }}" >> $GITHUB_ENV
 
       - name: Create archives
@@ -331,7 +338,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/JediofFreedom/JoF_EJK.git
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
 
       - name: Create version tag
         id: tag
@@ -342,8 +349,8 @@ jobs:
 
       - name: Update latest-beta tag
         run: |
-          git tag -f latest-beta
-          git push origin latest-beta --force
+          git tag -f ${{ env.LATEST_BETA }}
+          git push origin ${{ env.LATEST_BETA }} --force
 
       - name: Create GitHub prerelease
         uses: softprops/action-gh-release@v2
@@ -699,7 +706,11 @@ jobs:
 
       - name: Set version env var
         run: |
-          echo "VERSION=${{ needs.master-version.outputs.version }}" >> $GITHUB_ENV
+          VER="${{ needs.master-version.outputs.version }}"
+          if [ "${{ github.repository_owner }}" != "JediofFreedom" ]; then
+            VER="${VER}-${{ github.repository_owner }}"
+          fi
+          echo "VERSION=${VER}" >> $GITHUB_ENV
 
       - name: Create archives
         run: |
@@ -714,7 +725,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/JediofFreedom/JoF_EJK.git
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
 
       - name: Create version tag
         id: tag
